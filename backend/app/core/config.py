@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 # Resolve .env relative to this file (backend/app/core/config.py → backend/.env)
@@ -14,7 +15,22 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     API_V1_STR: str = "/api/v1"
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    # Accepts a JSON array OR a comma-separated string, e.g.:
+    #   ALLOWED_ORIGINS=https://app.vercel.app,http://localhost:3000
+    ALLOWED_ORIGINS: Union[list[str], str] = ["http://localhost:3000"]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v: object) -> list[str]:
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                import json
+                return json.loads(stripped)
+            return [o.strip() for o in stripped.split(",") if o.strip()]
+        return v  # type: ignore[return-value]
 
     model_config = {"env_file": str(_ENV_FILE), "extra": "ignore"}
 
