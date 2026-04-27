@@ -154,6 +154,41 @@ shadcn v4.5 uses `@base-ui/react` instead of Radix UI. Key differences:
 
 ---
 
+## Production Deployment
+
+| Service | URL |
+|---------|-----|
+| Frontend | https://frontend-three-kappa-64.vercel.app |
+| Backend | https://textile-erp-agenticengineer-94560b5e.koyeb.app |
+| Database | Neon.tech — `ep-cold-tree-aoi9e5rt.c-2.ap-southeast-1.aws.neon.tech` |
+
+### Koyeb (Backend)
+
+- **App / Service:** `textile-erp / backend` — org: `agenticengineer`
+- **Build:** GitHub source, Docker builder, workdir `backend/`, Dockerfile `Dockerfile`
+- **Region:** `was` (Washington DC) — free tier
+
+Useful commands:
+```bash
+koyeb service logs textile-erp/backend --tail
+koyeb service update textile-erp/backend --env "ALLOWED_ORIGINS=https://frontend-three-kappa-64.vercel.app"
+koyeb service redeploy textile-erp/backend
+```
+
+### Vercel (Frontend)
+
+- **Project:** `frontend` linked to `github.com/asadullah48/textile-erp-platform`
+- **`NEXT_PUBLIC_API_URL`** is set via `frontend/vercel.json` `build.env` (not via `vercel env add`, which had a gitBranch restriction bug)
+
+### Neon.tech (Database)
+
+- **Pooler endpoint** (app queries): `ep-cold-tree-aoi9e5rt-pooler.c-2.ap-southeast-1.aws.neon.tech`
+- **Direct endpoint** (migrations / BYPASSRLS): `ep-cold-tree-aoi9e5rt.c-2.ap-southeast-1.aws.neon.tech`
+- Set `DATABASE_URL` to pooler URL; set `DATABASE_ADMIN_URL` to direct URL.
+- asyncpg URL format: `postgresql+asyncpg://user:pass@host/dbname?ssl=require` (drop `channel_binding` param — not supported by asyncpg)
+
+---
+
 ## Git Commit History (Sessions 1)
 
 | Commit | Description |
