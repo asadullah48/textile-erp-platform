@@ -1,0 +1,17 @@
+PERMISSIONS: dict[str, dict[str, bool]] = {
+    "fabric_read":    {"owner": True, "manager": True, "operator": True, "accountant": True},
+    "fabric_write":   {"owner": True, "manager": True, "operator": True},
+    "fabric_supplier_write": {"owner": True, "manager": True},
+    "user_manage":    {"owner": True},
+    "billing_manage": {"owner": True},
+    "audit_view":     {"owner": True},
+    "tenant_settings_write": {"owner": True, "manager": True},
+    "order_read":     {"owner": True, "manager": True, "operator": True, "accountant": True},
+    "order_write":    {"owner": True, "manager": True, "operator": True},
+    "bill_read":      {"owner": True, "manager": True, "accountant": True},
+    "bill_write":     {"owner": True, "manager": True, "accountant": True},
+    "finance_view":   {"owner": True, "manager": True, "accountant": True},
+    "ledger_view":    {"owner": True, "manager": True, "accountant": True},
+    "inventory_view": {"owner": True, "manager": True, "operator": True},
+    "inventory_write":{"owner": True, "manager": True, "operator": True},
+}

@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# Environment files (keep .env.example, ignore .env)
+**/.env
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Alembic auto-generated upgrade scripts — do NOT ignore these, they must be committed
+# Only ignore the __pycache__ of migrations
+backend/alembic/__pycache__/
+backend/alembic/versions/__pycache__/
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# Claude Code local config
+.claude/
+
+# Docs (plans are internal, not needed in deployment repo)
+docs/
