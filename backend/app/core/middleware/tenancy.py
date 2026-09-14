@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from app.core.security import decode_jwt
 
 EXEMPT_PREFIXES = (
@@ -19,14 +20,22 @@ class TenancyMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.startswith(p) for p in EXEMPT_PREFIXES):
             return await call_next(request)
 
+        # HTTPException raised directly inside BaseHTTPMiddleware.dispatch() is not
+        # reliably converted into an HTTP response by Starlette's exception handling
+        # (that conversion happens at the route/dependency layer, which this code
+        # runs before). Return JSONResponse explicitly instead of raising.
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing auth token")
+            return JSONResponse({"detail": "Missing auth token"}, status_code=401)
 
-        payload = decode_jwt(auth_header.removeprefix("Bearer "))
+        try:
+            payload = decode_jwt(auth_header.removeprefix("Bearer "))
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
         tenant_id = payload.get("tenant_id")
         if not tenant_id:
-            raise HTTPException(status_code=401, detail="No tenant context in token")
+            return JSONResponse({"detail": "No tenant context in token"}, status_code=401)
 
         request.state.tenant_id = tenant_id
         request.state.user_id = payload.get("sub")
