@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     API_V1_STR: str = "/api/v1"
+    # One-click demo workspaces (POST /auth/demo). Each visitor gets an isolated,
+    # seeded tenant that is purged after 24h. MAX_LIVE caps abuse.
+    DEMO_ENABLED: bool = True
+    DEMO_MAX_LIVE: int = 200
     # Accepts a JSON array OR a comma-separated string, e.g.:
     #   ALLOWED_ORIGINS=https://app.vercel.app,http://localhost:3000
     ALLOWED_ORIGINS: Union[list[str], str] = ["http://localhost:3000"]

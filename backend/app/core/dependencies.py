@@ -16,7 +16,11 @@ def _ensure_state_from_token(request: Request) -> None:
 
 
 def require_permission(feature: str):
+    if feature not in PERMISSIONS:  # fail loudly at import time, not silently at runtime
+        raise ValueError(f"Unknown permission key: {feature}")
+
     def dependency(request: Request):
+        _ensure_state_from_token(request)
         role = getattr(request.state, "role", None)
         if not PERMISSIONS.get(feature, {}).get(role, False):
             raise HTTPException(403, f"Role '{role}' lacks permission '{feature}'")
