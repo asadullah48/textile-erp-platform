@@ -313,11 +313,15 @@ async def roll_trace(db: AsyncSession, roll_id: UUID) -> RollTrace:
     imp = None
     if lot.import_id:
         imp = (await db.execute(select(FabricImport).where(FabricImport.id == lot.import_id))).scalar_one_or_none()
+    # Only sessions on or before the roll was registered can have produced it.
+    made_by = roll.created_at.date()
     weaving = (await db.execute(select(WeavingSession).where(
-        WeavingSession.lot_id == lot.id, WeavingSession.is_deleted == False)  # noqa: E712
+        WeavingSession.lot_id == lot.id, WeavingSession.is_deleted == False,  # noqa: E712
+        WeavingSession.session_date <= made_by)
         .order_by(WeavingSession.session_date))).scalars().all()
     knitting = (await db.execute(select(KnittingSession).where(
-        KnittingSession.lot_id == lot.id, KnittingSession.is_deleted == False)  # noqa: E712
+        KnittingSession.lot_id == lot.id, KnittingSession.is_deleted == False,  # noqa: E712
+        KnittingSession.session_date <= made_by)
         .order_by(KnittingSession.session_date))).scalars().all()
     issuances = (await db.execute(select(FabricIssuance).where(
         FabricIssuance.roll_id == roll.id, FabricIssuance.is_deleted == False)  # noqa: E712
@@ -330,7 +334,8 @@ async def roll_trace(db: AsyncSession, roll_id: UUID) -> RollTrace:
         if imp.clearance_date:
             t.append(TraceEvent(at=imp.clearance_date, kind="import", title=f"Cleared at {imp.port_of_entry}",
                                 detail=f"Landed cost PKR {imp.landed_cost_per_meter_pkr}/m"))
-    t.append(TraceEvent(at=lot.received_date, kind="lot", title=f"Lot {lot.lot_number} received",
+    verb = "received" if (lot.supplier or imp) else "completed"
+    t.append(TraceEvent(at=lot.received_date, kind="lot", title=f"Lot {lot.lot_number} {verb}",
                         detail=f"{lot.fabric_type} · {lot.color}" + (f" · from {supplier.name}" if supplier else "")))
     for w in weaving:
         t.append(TraceEvent(at=w.session_date, kind="weaving",
@@ -346,7 +351,9 @@ async def roll_trace(db: AsyncSession, roll_id: UUID) -> RollTrace:
     for i in issuances:
         t.append(TraceEvent(at=i.issued_date, kind="issue", title=f"Issued to {i.issued_to_department}",
                             detail=f"{i.issued_meters} m" + (f" · order {i.cmt_order_reference}" if i.cmt_order_reference else "")))
-    t.sort(key=lambda e: e.at)
+    # Same-day events follow the physical order: production → lot → roll → issue.
+    rank = {"import": 0, "weaving": 1, "knitting": 1, "lot": 2, "roll": 3, "issue": 4}
+    t.sort(key=lambda e: (e.at, rank[e.kind]))
 
     return RollTrace(
         roll=FabricRollRead.model_validate(roll),

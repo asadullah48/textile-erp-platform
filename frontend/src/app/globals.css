@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -49,38 +49,42 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Mill-ledger palette: warm paper, indigo denim, saffron thread. */
+  --background: oklch(0.975 0.006 85);
+  --foreground: oklch(0.2 0.02 265);
+  --card: oklch(0.995 0.003 85);
+  --card-foreground: oklch(0.2 0.02 265);
+  --popover: oklch(0.995 0.003 85);
+  --popover-foreground: oklch(0.2 0.02 265);
+  --primary: oklch(0.36 0.09 265);
+  --primary-foreground: oklch(0.98 0.005 85);
+  --secondary: oklch(0.94 0.012 85);
+  --secondary-foreground: oklch(0.28 0.05 265);
+  --muted: oklch(0.945 0.01 85);
+  --muted-foreground: oklch(0.5 0.02 265);
+  --accent: oklch(0.93 0.03 75);
+  --accent-foreground: oklch(0.35 0.08 55);
+  --destructive: oklch(0.56 0.2 28);
+  --border: oklch(0.89 0.012 85);
+  --input: oklch(0.87 0.014 85);
+  --ring: oklch(0.55 0.1 265);
+  --chart-1: oklch(0.36 0.09 265);
+  --chart-2: oklch(0.72 0.15 70);
+  --chart-3: oklch(0.6 0.1 175);
+  --chart-4: oklch(0.58 0.14 28);
+  --chart-5: oklch(0.7 0.05 265);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.24 0.06 265);
+  --sidebar-foreground: oklch(0.92 0.01 85);
+  --sidebar-primary: oklch(0.78 0.14 75);
+  --sidebar-primary-foreground: oklch(0.2 0.03 265);
+  --sidebar-accent: oklch(0.31 0.07 265);
+  --sidebar-accent-foreground: oklch(0.98 0.005 85);
+  --sidebar-border: oklch(0.34 0.05 265);
+  --sidebar-ring: oklch(0.78 0.14 75);
+  --thread: oklch(0.72 0.15 70);
+  --ok: oklch(0.55 0.11 165);
+  --warn: oklch(0.7 0.15 70);
 }
 
 .dark {
@@ -127,4 +131,18 @@
   html {
     @apply font-sans;
   }
+}
+@layer utilities {
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  /* Subtle woven texture for hero surfaces */
+  .weave {
+    background-image:
+      repeating-linear-gradient(0deg, oklch(1 0 0 / 0.035) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(90deg, oklch(1 0 0 / 0.035) 0 1px, transparent 1px 6px);
+  }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
 }

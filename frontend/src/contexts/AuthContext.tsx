@@ -1,73 +1,93 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import api from "@/lib/api";
-import type { User, Tenant } from "@/types";
+import React, { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { BROWSER_DEMO } from "@/lib/api";
+import { resetDemo, setDemoRole } from "@/lib/demo/adapter";
+import { authApi } from "@/services/erp";
+import type { Me, Role, Tenant, Token, User } from "@/types";
 
 interface AuthState {
   user: User | null;
   tenant: Tenant | null;
-  token: string | null;
+  permissions: string[];
   isLoading: boolean;
+  can: (permission: string) => boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (data: Record<string, unknown>) => Promise<void>;
+  enterDemo: () => Promise<void>;
+  switchDemoRole: (role: Role) => Promise<void>;
+  resetDemoData: () => Promise<void>;
   logout: () => void;
-  register: (data: RegisterData) => Promise<void>;
-}
-
-interface RegisterData {
-  org_name: string;
-  industry: string;
-  full_name: string;
-  email: string;
-  password: string;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
+function persistToken(token: string) {
+  localStorage.setItem("access_token", token);
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `access_token=${token}; path=/; max-age=${60 * 60 * 8}; SameSite=Lax${secure}`;
+}
+
+function clearToken() {
+  localStorage.removeItem("access_token");
+  document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [tenant, setTenant] = useState<Tenant | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-    if (stored) setToken(stored);
-    setIsLoading(false);
+  // The token alone is not a session: on every load, re-hydrate user, tenant
+  // and permissions from /auth/me (fixes the "Loading…" sidebar after refresh).
+  const refresh = useCallback(async () => {
+    try {
+      setMe(await authApi.me());
+    } catch {
+      setMe(null);
+    }
   }, []);
 
-  const _persist = (data: { access_token: string; user: User; tenant: Tenant }) => {
-    localStorage.setItem("access_token", data.access_token);
-    document.cookie = `access_token=${data.access_token}; path=/; SameSite=Lax`;
-    setToken(data.access_token);
-    setUser(data.user);
-    setTenant(data.tenant);
+  useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+    refresh().finally(() => setIsLoading(false));
+  }, [refresh]);
+
+  const start = async (t: Token) => {
+    persistToken(t.access_token);
+    await refresh();
   };
 
-  const login = async (email: string, password: string) => {
-    const res = await api.post("/api/v1/auth/login", { email, password });
-    _persist(res.data);
+  const value: AuthState = {
+    user: me ? { id: me.id, email: me.email, full_name: me.full_name, role: me.role } : null,
+    tenant: me?.tenant ?? null,
+    permissions: me?.permissions ?? [],
+    isLoading,
+    can: (p) => !!me?.permissions.includes(p),
+    login: async (email, password) => start(await authApi.login(email, password)),
+    register: async (data) => start(await authApi.register(data)),
+    enterDemo: async () => start(await authApi.demo()),
+    switchDemoRole: async (role) => {
+      if (!BROWSER_DEMO) return;
+      setDemoRole(role);
+      await refresh();
+    },
+    resetDemoData: async () => {
+      if (!BROWSER_DEMO) return;
+      resetDemo(me?.role ?? "owner");
+      await refresh();
+    },
+    logout: () => {
+      clearToken();
+      setMe(null);
+      window.location.href = "/";
+    },
   };
 
-  const logout = () => {
-    localStorage.removeItem("access_token");
-    document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    setToken(null);
-    setUser(null);
-    setTenant(null);
-    window.location.href = "/login";
-  };
-
-  const register = async (data: RegisterData) => {
-    const res = await api.post("/api/v1/auth/register-tenant", data);
-    _persist(res.data);
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, tenant, token, isLoading, login, logout, register }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

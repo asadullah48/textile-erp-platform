@@ -415,3 +415,16 @@ async def test_expired_demo_workspaces_are_purged(client):
                                  {"e": demo["user"]["email"]})).scalar_one()
     assert left == 0 and users == 0
     assert (await client.get(f"{BASE}/auth/me", headers=auth(demo["access_token"]))).status_code == 401
+
+
+async def test_trace_only_includes_sessions_that_could_have_made_the_roll(client, tenant_a):
+    """A loom shift logged after a roll was registered did not weave that roll."""
+    t = tenant_a["token"]
+    lot, rolls = await _lot_with_rolls(client, t, n=1)  # roll registered today
+    for day in (2, 0, -1):  # two days ago, today, tomorrow
+        r = await client.post(f"{BASE}/weaving-sessions", headers=auth(t), json={
+            "lot_id": lot["id"], "loom_number": f"L-{day}", "produced_meters": "100",
+            "session_date": str(date.today() - timedelta(days=day))})
+        assert r.status_code == 201
+    trace = (await client.get(f"{BASE}/fabric-rolls/{rolls[0]['id']}/trace", headers=auth(t))).json()
+    assert sorted(w["loom_number"] for w in trace["weaving_sessions"]) == ["L-0", "L-2"]

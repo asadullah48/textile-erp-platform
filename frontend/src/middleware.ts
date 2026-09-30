@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// Coarse gate only: bounce visitors without a session cookie to /login.
+// Real authorization happens in the API on every request.
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("access_token")?.value;
-  const { pathname } = request.nextUrl;
-
-  const isProtected = pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/fabric-lots") ||
-    pathname.startsWith("/fabric-rolls");
-
-  if (isProtected && !token) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  if (!request.cookies.get("access_token")?.value) {
+    const url = new URL("/login", request.url);
+    url.searchParams.set("next", request.nextUrl.pathname);
+    return NextResponse.redirect(url);
   }
-
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/fabric-lots/:path*", "/fabric-rolls/:path*"],
+  matcher: [
+    "/dashboard/:path*", "/fabric-lots/:path*", "/fabric-rolls/:path*", "/suppliers/:path*", "/yarn/:path*",
+    "/weaving/:path*", "/knitting/:path*", "/imports/:path*", "/reports/:path*", "/team/:path*",
+  ],
 };

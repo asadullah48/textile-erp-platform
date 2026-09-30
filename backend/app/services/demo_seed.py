@@ -6,7 +6,7 @@ ledger, lot statuses are derived from issuances, landed cost is computed.
 Dates are relative to today so the Mill Pulse rules always have something
 real to find. All business names are fictional.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from uuid import UUID
 
@@ -66,28 +66,39 @@ async def seed_demo_data(db: AsyncSession, tenant_id: UUID, user_id: UUID) -> No
         transaction_type="wastage", quantity_kg=D("35"), transaction_date=ago(9),
         notes="Moisture damage, bay 3"))
 
-    # ---- local greige lots + rolls ------------------------------------------
+    # ---- in-house woven / knitted lots ---------------------------------------
+    # In-house lots carry no supplier: the looms below produced them. The lot's
+    # date is the day the last piece was doffed and the rolls were registered,
+    # so every production session precedes the rolls it made.
     woven1 = await fs.create_lot(db, t, FabricLotCreate(
         lot_number="FSD-W-2409", fabric_type="100% Cotton Poplin 40x40", fabric_category="woven",
         color="Greige", gsm=D("115"), width_cm=D("147"), total_meters=D("2400"),
-        received_date=ago(26), supplier_id=lyallpur.id, cost_per_meter=D("312")))
+        received_date=ago(8), cost_per_meter=D("312"), notes="Woven in-house · looms L-07 / L-12"))
     rolls_w1 = await fs.bulk_create_rolls(db, t, str(woven1.id), FabricRollBulkCreate(
         prefix="W2409-", count=24, length_meters=D("100"), weight_kg=D("17.2"), grade="A",
         location="Rack A-3"))
 
     woven2 = await fs.create_lot(db, t, FabricLotCreate(
-        lot_number="FSD-W-2410", fabric_type="60/40 CVC Twill 2/1", fabric_category="woven",
+        lot_number="FSD-W-2410", fabric_type="PC Twill 2/1 (cotton warp, poly weft)", fabric_category="woven",
         color="Natural", gsm=D("190"), width_cm=D("152"), total_meters=D("1800"),
-        received_date=ago(12), supplier_id=lyallpur.id, cost_per_meter=D("398")))
+        received_date=ago(1), cost_per_meter=D("398"), notes="Woven in-house · looms L-03 / L-07 / L-12 / L-21"))
     rolls_w2 = await fs.bulk_create_rolls(db, t, str(woven2.id), FabricRollBulkCreate(
         prefix="W2410-", count=18, length_meters=D("100"), weight_kg=D("28.9"), location="Rack B-1"))
 
     knit1 = await fs.create_lot(db, t, FabricLotCreate(
         lot_number="FSD-K-0931", fabric_type="Single Jersey 30s", fabric_category="knitted",
         color="Raw White", gsm=D("160"), width_cm=D("183"), total_meters=D("1500"),
-        received_date=ago(8), cost_per_meter=D("265"), notes="Knitted in-house"))
+        received_date=ago(2), cost_per_meter=D("265"), notes="Knitted in-house · machines KM-2 / KM-4"))
     await fs.bulk_create_rolls(db, t, str(knit1.id), FabricRollBulkCreate(
         prefix="K0931-", count=12, length_meters=D("125"), weight_kg=D("36.4"), location="Bay 2"))
+
+    # ---- purchased greige ----------------------------------------------------
+    greige = await fs.create_lot(db, t, FabricLotCreate(
+        lot_number="LGH-G-2412", fabric_type="Cotton Lawn 60x60", fabric_category="woven",
+        color="Greige", gsm=D("95"), width_cm=D("142"), total_meters=D("1200"),
+        received_date=ago(16), supplier_id=lyallpur.id, cost_per_meter=D("285"), notes="Bill 7731 · 45 days"))
+    rolls_g = await fs.bulk_create_rolls(db, t, str(greige.id), FabricRollBulkCreate(
+        prefix="G2412-", count=12, length_meters=D("100"), weight_kg=D("14.1"), location="Rack C-2"))
 
     # Dead stock on purpose — 120 days on the rack, nothing issued.
     old = await fs.create_lot(db, t, FabricLotCreate(
@@ -106,6 +117,14 @@ async def seed_demo_data(db: AsyncSession, tenant_id: UUID, user_id: UUID) -> No
     await fs.bulk_create_rolls(db, t, str(unv.id), FabricRollBulkCreate(
         prefix="W2411-", count=6, length_meters=D("100"), location="Receiving"))
 
+    # Rolls arrive with their lot, not "today" — keeps traceability timelines honest.
+    from sqlalchemy import select
+    from app.models.fabric import FabricLot, FabricRoll
+    for roll, received in (await db.execute(
+        select(FabricRoll, FabricLot.received_date).join(FabricLot, FabricLot.id == FabricRoll.lot_id)
+    )).all():
+        roll.created_at = datetime.combine(received, time(9), tzinfo=timezone.utc)
+
     # ---- weaving + knitting production (posts yarn issues to the ledger) ----
     loom_plan = [  # (days ago, loom, shift, meters, grade, yarn kg)
         (14, "L-07", "day", 420, "A", 118), (13, "L-07", "night", 395, "A", 111),
@@ -119,7 +138,7 @@ async def seed_demo_data(db: AsyncSession, tenant_id: UUID, user_id: UUID) -> No
     operators = {"L-07": "Muhammad Aslam", "L-12": "Shahid Iqbal", "L-03": "Nadeem Akhtar"}
     for days, loom, shift, meters, grade, kg in loom_plan:
         await ps.create_weaving(db, t, u, WeavingSessionCreate(
-            lot_id=woven1.id if days > 7 else woven2.id, loom_number=loom,
+            lot_id=woven1.id if days >= 8 else woven2.id, loom_number=loom,
             operator_name=operators[loom], session_date=ago(days), shift=shift,
             picks_per_inch=72, ends_per_inch=132, produced_meters=D(meters), quality_grade=grade,
             yarn_type_id=c20.id, yarn_consumed_kg=D(kg)))
@@ -139,10 +158,11 @@ async def seed_demo_data(db: AsyncSession, tenant_id: UUID, user_id: UUID) -> No
             quality_grade=grade))
 
     # ---- issuances to CMT departments ----------------------------------------
-    plan = [(rolls_w1[0], "cutting", None, "PO-SIA-1182", 11), (rolls_w1[1], "cutting", None, "PO-SIA-1182", 11),
-            (rolls_w1[2], "cutting", D("60"), "PO-SIA-1182", 10), (rolls_w1[3], "sampling", D("12"), None, 7),
-            (rolls_w1[4], "cutting", None, "PO-KHI-0417", 5), (rolls_w2[0], "dyeing", None, "DY-0092", 3),
-            (rolls_w2[1], "dyeing", D("45"), "DY-0092", 1)]
+    plan = [(rolls_w1[0], "cutting", None, "PO-SIA-1182", 6), (rolls_w1[1], "cutting", None, "PO-SIA-1182", 6),
+            (rolls_w1[2], "cutting", D("60"), "PO-SIA-1182", 5), (rolls_w1[3], "sampling", D("12"), None, 4),
+            (rolls_w1[4], "cutting", None, "PO-KHI-0417", 3), (rolls_w2[0], "dyeing", None, "DY-0092", 0),
+            (rolls_w2[1], "dyeing", D("45"), "DY-0092", 0), (rolls_g[0], "stitching", None, "PO-LHR-0233", 9),
+            (rolls_g[1], "stitching", D("70"), "PO-LHR-0233", 4)]
     for roll, dept, meters, ref, days in plan:
         await fs.issue_roll(db, t, u, roll.id, IssueRollRequest(
             issued_to_department=dept, issued_meters=meters, cmt_order_reference=ref, issued_date=ago(days)))
@@ -154,9 +174,12 @@ async def seed_demo_data(db: AsyncSession, tenant_id: UUID, user_id: UUID) -> No
         currency="USD", fob_cost=D("7800"), exchange_rate=D("279.35"), freight_cost_pkr=D("186000"),
         insurance_cost_pkr=D("21400"), duties_paid_pkr=D("512000"), lc_opened_date=ago(64)))
     await imps.update_import(db, wh.id, ImportUpdate(status="cleared", clearance_date=ago(22)))
-    await imps.receive_import(db, t, wh.id, ReceiveImportRequest(
+    imp_lot = await imps.receive_import(db, t, wh.id, ReceiveImportRequest(
         lot_number="IMP-CN-0712", color="Navy", warehouse_arrival_date=ago(19), roll_count=12,
         location="Import Bay 1"))
+    for roll in (await db.execute(select(FabricRoll).where(FabricRoll.lot_id == imp_lot.id))).scalars():
+        roll.created_at = datetime.combine(imp_lot.received_date, time(9), tzinfo=timezone.utc)
+    await db.flush()
 
     stuck = await imps.create_import(db, t, ImportCreate(
         lc_number="HBL-LC-26-0803", supplier_id=anatolia.id, fabric_type="Stretch Denim 11oz",

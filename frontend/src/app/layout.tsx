@@ -14,8 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Textile ERP",
-  description: "Multi-tenant Fabric Mill ERP Platform",
+  title: { default: "Textile ERP — Fabric Mill", template: "%s · Textile ERP" },
+  description:
+    "Multi-tenant ERP for Pakistan's fabric mills: roll register, yarn stock ledger, weaving & knitting, LC imports, roll traceability and deterministic Mill Pulse alerts.",
+  openGraph: {
+    title: "Textile ERP — Fabric Mill module",
+    description: "Roll register, yarn ledger, looms, LC imports and traceability for Pakistan's textile SMEs. Live demo, no sign-up.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -24,10 +30,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    // Font variables live on <html>: the font-family rule is declared on html,
+    // so a variable scoped to <body> would be undefined there (→ serif fallback).
+    <html lang="en-PK" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className="antialiased">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
