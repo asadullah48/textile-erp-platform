@@ -8,7 +8,7 @@ docs/MODULE-1.md (e.g. operator_name instead of an operator user FK, because
 loom operators on a Faisalabad floor rarely have their own login).
 """
 from sqlalchemy import (
-    Column, String, Numeric, Date, Text, ForeignKey, Index, Integer, Time,
+    BigInteger, Column, Date, ForeignKey, Identity, Index, Integer, Numeric, String, Text, Time,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import TenantBaseModel
@@ -138,6 +138,7 @@ class YarnTransaction(TenantBaseModel):
         Index("idx_yarn_txn_date", "tenant_id", "transaction_date"),
     )
 
+    seq = Column(BigInteger, Identity(always=True), nullable=False, unique=True)  # strict posting order
     yarn_type_id = Column(UUID(as_uuid=True), ForeignKey("yarn_types.id"), nullable=False)
     transaction_type = Column(String(20), nullable=False)  # receipt | issue | adjustment | wastage
     direction = Column(String(3), nullable=False)          # in | out

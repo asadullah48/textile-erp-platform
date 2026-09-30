@@ -123,6 +123,9 @@ def upgrade() -> None:
 
     op.create_table(
         "yarn_transactions", *_base_columns(),
+        # Strict posting order. created_at is the *transaction* start time, so
+        # several movements posted in one request would otherwise tie.
+        sa.Column("seq", sa.BigInteger, sa.Identity(always=True), nullable=False, unique=True),
         _uuid("yarn_type_id", sa.ForeignKey("yarn_types.id"), nullable=False),
         sa.Column("transaction_type", sa.String(20), nullable=False),
         sa.Column("direction", sa.String(3), nullable=False),

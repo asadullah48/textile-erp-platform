@@ -127,7 +127,7 @@ async def list_transactions(db: AsyncSession, yarn_id: UUID, date_from: Optional
         q = q.where(YarnTransaction.transaction_date >= date_from)
     if date_to:
         q = q.where(YarnTransaction.transaction_date <= date_to)
-    q = q.order_by(YarnTransaction.created_at.desc()).limit(limit).offset(offset)
+    q = q.order_by(YarnTransaction.seq.desc()).limit(limit).offset(offset)
     return (await db.execute(q)).scalars().all()
 
 
