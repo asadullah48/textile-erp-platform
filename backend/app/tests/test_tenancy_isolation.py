@@ -138,3 +138,11 @@ async def test_summary_is_tenant_scoped(
     # B cannot get that summary
     resp_b = await client.get(f"{BASE}/fabric-lots/{lot_id}/summary", headers=auth(tenant_b["token"]))
     assert resp_b.status_code == 404
+
+
+async def test_app_connects_as_a_role_that_cannot_bypass_rls():
+    """Superusers and BYPASSRLS roles ignore row-level security even with FORCE.
+    If this fails, every isolation test above is meaningless — fix the DB role,
+    don't skip the test (see scripts/create_app_role.sql)."""
+    from app.main import rls_bypassed
+    assert await rls_bypassed() is False

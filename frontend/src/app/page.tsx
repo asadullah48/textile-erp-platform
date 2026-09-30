@@ -25,7 +25,7 @@ const MODULES = [
 const ENGINEERING = [
   { icon: Lock, title: "Tenant isolation in PostgreSQL", body: "Row-Level Security with FORCE on every table. A query with no WHERE clause still can't see another mill's rows — proven by a test that runs raw SQL." },
   { icon: ShieldCheck, title: "RBAC on every endpoint", body: "Owner, manager, operator, accountant. The API enforces it; the UI only mirrors it. Switch roles in the demo and watch buttons — and permissions — change." },
-  { icon: Database, title: "Invariants, not conventions", body: "Row locks on stock movements, a strict ledger sequence, CHECK constraints, forward-only LC status. 41 backend tests, including a mutation-checked concurrency race." },
+  { icon: Database, title: "Invariants, not conventions", body: "Row locks on stock movements, a strict ledger sequence, CHECK constraints, forward-only LC status. 42 backend tests, including a mutation-checked concurrency race." },
   { icon: GitBranch, title: "Spec-first, open source", body: "Built against a written spec (SPEC-ERP.md) with CI on every push. FastAPI · SQLAlchemy 2 async · Next.js 15 · TypeScript strict." },
 ];
 

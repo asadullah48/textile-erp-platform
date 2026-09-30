@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,8 +20,27 @@ isolated, pre-seeded demo mill) and send `Authorization: Bearer <token>`.
 """
 
 
+log = logging.getLogger("textile_erp")
+
+RLS_CHECK = text("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")
+
+
+async def rls_bypassed() -> bool:
+    async with engine.connect() as conn:
+        return bool((await conn.execute(RLS_CHECK)).scalar())
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    try:
+        if await rls_bypassed():
+            log.critical(
+                "DATABASE_URL connects as a superuser or BYPASSRLS role: row-level security "
+                "is NOT enforced and tenants are NOT isolated. Connect as a least-privilege "
+                "role — see backend/scripts/create_app_role.sql."
+            )
+    except Exception:  # database may not be up yet; /health/ready reports it
+        log.warning("Could not verify RLS enforcement at startup")
     yield
     await engine.dispose()
 
@@ -49,6 +69,6 @@ async def health():
 
 @app.get("/health/ready", tags=["ops"])
 async def ready():
-    async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
-    return {"status": "ready", "database": "ok"}
+    """Readiness: database reachable, and whether tenant isolation is actually enforced."""
+    enforced = not await rls_bypassed()
+    return {"status": "ready", "database": "ok", "rls_enforced": enforced}
