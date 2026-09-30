@@ -12,9 +12,17 @@ class Settings(BaseSettings):
     # Admin URL uses the DB owner role (BYPASSRLS) for auth-only operations.
     # Falls back to DATABASE_URL if not set (e.g., local dev with a single superuser).
     DATABASE_ADMIN_URL: Optional[str] = None
+    # Schema owner used only by Alembic. The API itself should connect as a
+    # least-privilege role (see scripts/create_app_role.sql) because superusers
+    # and BYPASSRLS roles ignore row-level security.
+    MIGRATIONS_DATABASE_URL: Optional[str] = None
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     API_V1_STR: str = "/api/v1"
+    # One-click demo workspaces (POST /auth/demo). Each visitor gets an isolated,
+    # seeded tenant that is purged after 24h. MAX_LIVE caps abuse.
+    DEMO_ENABLED: bool = True
+    DEMO_MAX_LIVE: int = 200
     # Accepts a JSON array OR a comma-separated string, e.g.:
     #   ALLOWED_ORIGINS=https://app.vercel.app,http://localhost:3000
     ALLOWED_ORIGINS: Union[list[str], str] = ["http://localhost:3000"]
@@ -37,6 +45,10 @@ class Settings(BaseSettings):
     @property
     def effective_admin_url(self) -> str:
         return self.DATABASE_ADMIN_URL or self.DATABASE_URL
+
+    @property
+    def effective_migrations_url(self) -> str:
+        return self.MIGRATIONS_DATABASE_URL or self.DATABASE_ADMIN_URL or self.DATABASE_URL
 
 
 settings = Settings()

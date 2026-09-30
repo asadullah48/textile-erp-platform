@@ -23,7 +23,7 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    url = settings.DATABASE_URL
+    url = settings.effective_migrations_url
     # Alembic runs synchronously — swap asyncpg driver for psycopg2
     url = re.sub(r"postgresql\+asyncpg://", "postgresql+psycopg2://", url)
     # asyncpg uses ?ssl=require; psycopg2 uses ?sslmode=require

@@ -1,167 +1,110 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { fabricService } from "@/services/fabricService";
-import type { FabricLotCreate } from "@/services/fabricService";
-import type { FabricLot } from "@/types";
-import { statusColor } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useState } from "react";
+import { Plus, Search } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  DataTable, EmptyState, ErrorNote, FilterSelect, FormDialog, PageHeader, SelectInput, Skeleton, StatusBadge, TextInput,
+} from "@/components/erp/kit";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/contexts/AuthContext";
+import { useDebounced } from "@/hooks/useDebounced";
+import { useLoad } from "@/hooks/useLoad";
+import { cn, formatDate, formatMeters, formatPKR, humanize, isoDate, num } from "@/lib/utils";
+import { lotApi, supplierApi } from "@/services/erp";
+import type { FabricLot } from "@/types";
 
-const EMPTY: FabricLotCreate = {
-  lot_number: "",
-  fabric_type: "",
-  color: "",
-  total_meters: 0,
-  received_date: new Date().toISOString().split("T")[0],
-  gsm: null,
-  width_cm: null,
-  supplier: null,
-  status: "in_stock",
-  notes: null,
-};
+const CATEGORIES = ["", "woven", "knitted", "imported", "yarn_fabric"] as const;
+const STATUSES = ["", "pending", "in_stock", "partially_consumed", "fully_consumed"];
 
 export default function FabricLotsPage() {
-  const [lots, setLots] = useState<FabricLot[]>([]);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<FabricLotCreate>(EMPTY);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const load = () => fabricService.getLots().then(setLots);
-  useEffect(() => {
-    load();
-  }, []);
-
-  const set =
-    (k: keyof FabricLotCreate) => (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      await fabricService.createLot(form);
-      setOpen(false);
-      setForm(EMPTY);
-      load();
-    } catch (err: unknown) {
-      setError(
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Error creating lot"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteLot = async (id: string) => {
-    if (!confirm("Delete this lot?")) return;
-    await fabricService.deleteLot(id);
-    load();
-  };
+  const { can } = useAuth();
+  const [category, setCategory] = useState("");
+  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const q = useDebounced(search);
+  const lots = useLoad(() => lotApi.list({ fabric_category: category, status, search: q }), [category, status, q]);
+  const suppliers = useLoad(() => supplierApi.list());
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Fabric Lots</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button />}>New Lot</DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Create Fabric Lot</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={submit} className="space-y-3">
-              {(
-                [
-                  { k: "lot_number", label: "Lot Number", type: "text", required: true },
-                  { k: "fabric_type", label: "Fabric Type", type: "text", required: true },
-                  { k: "color", label: "Color", type: "text", required: true },
-                  { k: "total_meters", label: "Total Meters", type: "number", required: true },
-                  { k: "received_date", label: "Received Date", type: "date", required: true },
-                  { k: "gsm", label: "GSM", type: "number", required: false },
-                  { k: "width_cm", label: "Width (cm)", type: "number", required: false },
-                  { k: "supplier", label: "Supplier", type: "text", required: false },
-                ] as const
-              ).map(({ k, label, type, required }) => (
-                <div key={k}>
-                  <Label htmlFor={k}>{label}</Label>
-                  <Input
-                    id={k}
-                    type={type}
-                    value={String((form as Record<string, unknown>)[k] ?? "")}
-                    onChange={set(k)}
-                    required={required}
-                  />
-                </div>
-              ))}
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Creating…" : "Create Lot"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+    <>
+      <PageHeader
+        eyebrow="Fabric"
+        title="Fabric lots"
+        subtitle="Every delivery, woven batch and LC shipment — the digital roll register."
+        actions={
+          <FormDialog
+            disabled={!can("fabric_write")}
+            trigger={<Button><Plus /> New lot</Button>}
+            title="Receive a fabric lot"
+            description="Register the lot first, then add its rolls (singly or in bulk)."
+            submitLabel="Create lot"
+            wide
+            onSubmit={async (b) => {
+              await lotApi.create(b);
+              await lots.reload();
+            }}
+          >
+            <TextInput label="Lot number" name="lot_number" required placeholder="FSD-W-2412" />
+            <SelectInput label="Category" name="fabric_category" defaultValue="woven"
+              options={CATEGORIES.filter(Boolean).map((c) => ({ value: c, label: humanize(c) }))} />
+            <TextInput label="Fabric type" name="fabric_type" required placeholder="100% Cotton Poplin 40x40" className="sm:col-span-2" />
+            <TextInput label="Colour" name="color" required placeholder="Greige" />
+            <SelectInput label="Supplier" name="supplier_id" defaultValue=""
+              options={[{ value: "", label: "— none / in-house —" }, ...(suppliers.data ?? []).map((s) => ({ value: s.id, label: s.name }))]} />
+            <TextInput label="Total meters" name="total_meters" type="number" step="0.01" min="0" required />
+            <TextInput label="Cost per meter (PKR)" name="cost_per_meter" type="number" step="0.01" min="0"
+              hint="Leave blank if not yet invoiced — Mill Pulse will flag it." />
+            <TextInput label="GSM" name="gsm" type="number" step="0.01" min="0" />
+            <TextInput label="Width (cm)" name="width_cm" type="number" step="0.01" min="0" />
+            <TextInput label="Received on" name="received_date" type="date" defaultValue={isoDate()} required />
+            <TextInput label="Notes" name="notes" />
+          </FormDialog>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="tablist" aria-label="Category" className="flex rounded-lg border bg-card p-0.5">
+          {CATEGORIES.map((c) => (
+            <button key={c || "all"} role="tab" aria-selected={category === c} onClick={() => setCategory(c)}
+              className={cn("rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                category === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+              {c ? humanize(c) : "All"}
+            </button>
+          ))}
+        </div>
+        <FilterSelect label="Status" value={status} onChange={setStatus}
+          options={STATUSES.map((s) => ({ value: s, label: s ? humanize(s) : "Any status" }))} />
+        <div className="relative ml-auto w-full sm:w-64">
+          <Search className="absolute left-2.5 top-2 size-4 text-muted-foreground" />
+          <Input aria-label="Search lots" placeholder="Lot, fabric or colour…" className="pl-8" value={search}
+            onChange={(e) => setSearch(e.target.value)} />
+        </div>
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              {["Lot #", "Fabric Type", "Color", "GSM", "Total m", "Status", "Actions"].map((h) => (
-                <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {lots.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                  No lots yet. Create your first lot.
-                </td>
-              </tr>
-            ) : (
-              lots.map((l) => (
-                <tr key={l.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <Link href={`/fabric-lots/${l.id}`} className="text-blue-600 hover:underline font-medium">
-                      {l.lot_number}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">{l.fabric_type}</td>
-                  <td className="px-4 py-3">{l.color}</td>
-                  <td className="px-4 py-3">{l.gsm ?? "—"}</td>
-                  <td className="px-4 py-3">{Number(l.total_meters).toFixed(1)}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={statusColor(l.status)}>{l.status.replace(/_/g, " ")}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => deleteLot(l.id)}
-                    >
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      {lots.error ? <ErrorNote message={lots.error} onRetry={lots.reload} /> : lots.loading && !lots.data ? <Skeleton /> : (
+        <DataTable<FabricLot>
+          rows={lots.data ?? []}
+          empty={<EmptyState title="No lots match" hint="Try another filter, or receive a new lot." />}
+          columns={[
+            { header: "Lot", cell: (l) => (
+              <Link href={`/fabric-lots/${l.id}`} className="font-medium text-primary hover:underline">{l.lot_number}</Link>
+            ) },
+            { header: "Fabric", cell: (l) => (
+              <span className="block max-w-[16rem] truncate">{l.fabric_type} <span className="text-muted-foreground">· {l.color}</span></span>
+            ) },
+            { header: "Category", cell: (l) => humanize(l.fabric_category) },
+            { header: "Supplier", cell: (l) => <span className="block max-w-[12rem] truncate">{l.supplier ?? "—"}</span> },
+            { header: "Received", cell: (l) => formatDate(l.received_date) },
+            { header: "Meters", align: "right", cell: (l) => formatMeters(l.total_meters) },
+            { header: "Value", align: "right", cell: (l) => l.cost_per_meter
+              ? formatPKR(num(l.total_meters) * num(l.cost_per_meter), true)
+              : <span className="text-muted-foreground">not costed</span> },
+            { header: "Status", cell: (l) => <StatusBadge status={l.status} /> },
+          ]}
+        />
+      )}
+    </>
   );
 }

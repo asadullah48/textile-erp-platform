@@ -4,8 +4,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from app.core.security import decode_jwt
 
+# Exact public auth endpoints. /auth/me is deliberately NOT here: it needs the
+# tenant context so its RLS-protected membership lookup can see the caller's row.
+EXEMPT_PATHS = frozenset({
+    "/api/v1/auth/login",
+    "/api/v1/auth/register-tenant",
+    "/api/v1/auth/demo",
+})
+
 EXEMPT_PREFIXES = (
-    "/api/v1/auth/",
     "/api/v1/webhooks/",
     "/api/v1/share-links/",
     "/docs",
@@ -17,7 +24,9 @@ EXEMPT_PREFIXES = (
 
 class TenancyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if any(request.url.path.startswith(p) for p in EXEMPT_PREFIXES):
+        path = request.url.path.rstrip("/") or "/"
+        if (request.method == "OPTIONS" or path in EXEMPT_PATHS
+                or any(request.url.path.startswith(p) for p in EXEMPT_PREFIXES)):
             return await call_next(request)
 
         # HTTPException raised directly inside BaseHTTPMiddleware.dispatch() is not

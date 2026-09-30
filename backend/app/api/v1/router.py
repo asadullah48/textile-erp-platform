@@ -1,10 +1,8 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth
-from app.api.v1.endpoints.fabric import lots, rolls, lot_rolls, summary
+
+from app.api.v1.endpoints import auth, team
+from app.api.v1.endpoints.fabric import imports, lots, production, reports, rolls, suppliers, yarn
 
 api_router = APIRouter()
-api_router.include_router(auth.router)
-api_router.include_router(lots.router)
-api_router.include_router(rolls.router)
-api_router.include_router(lot_rolls.router)
-api_router.include_router(summary.router)
+for module in (auth, team, suppliers, lots, rolls, yarn, production, imports, reports):
+    api_router.include_router(module.router)

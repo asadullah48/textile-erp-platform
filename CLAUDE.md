@@ -8,74 +8,27 @@ Multi-tenant Fabric Mill SaaS ERP. Each tenant is a company (fabric mill, CMT fa
 
 ---
 
-## Directory Tree
+## Directory Tree (key paths)
 
 ```
-textile-erp-platform/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/
-│   │   │   ├── endpoints/
-│   │   │   │   ├── auth.py          # /auth/login, /register-tenant, /me
-│   │   │   │   └── fabric/
-│   │   │   │       ├── lots.py      # CRUD /fabric-lots
-│   │   │   │       ├── rolls.py     # standalone /fabric-rolls
-│   │   │   │       ├── lot_rolls.py # nested /fabric-lots/{id}/rolls
-│   │   │   │       └── summary.py   # /fabric-lots/{id}/summary
-│   │   │   └── router.py
-│   │   ├── core/
-│   │   │   ├── config.py            # Settings (pydantic-settings)
-│   │   │   ├── database.py          # AsyncEngine, get_db (sets app.tenant_id), get_admin_db
-│   │   │   ├── dependencies.py      # get_current_user_id, get_current_tenant_id
-│   │   │   └── security.py          # JWT encode/decode, password hashing
-│   │   ├── models/
-│   │   │   ├── base.py              # TenantBaseModel (id, tenant_id, timestamps, soft-delete)
-│   │   │   ├── tenant.py            # Tenant, TenantUser, Subscription
-│   │   │   └── fabric.py            # FabricLot, FabricRoll
-│   │   ├── schemas/
-│   │   │   ├── auth.py              # RegisterTenantRequest/Response, LoginRequest, UserOut, TenantOut
-│   │   │   └── fabric.py            # FabricLot/Roll Create/Update/Read, LotSummary
-│   │   ├── services/
-│   │   │   ├── tenant_service.py    # register_tenant, login, get_me
-│   │   │   └── fabric_service.py    # CRUD for lots + rolls + summary
-│   │   ├── tests/
-│   │   │   ├── conftest.py          # async client fixtures, two-tenant setup
-│   │   │   └── test_tenancy_isolation.py
-│   │   └── main.py                  # FastAPI app, lifespan, CORS
-│   ├── alembic/
-│   │   └── versions/
-│   │       ├── 001_tenancy.py       # tenants, tenant_users, subscriptions + RLS
-│   │       └── 002_fabric_mill.py   # fabric_lots, fabric_rolls + RLS
-│   ├── Dockerfile
-│   └── pyproject.toml
-├── frontend/
-│   └── src/
-│       ├── app/
-│       │   ├── (dashboard)/
-│       │   │   ├── layout.tsx        # sidebar + topbar
-│       │   │   ├── dashboard/page.tsx
-│       │   │   ├── fabric-lots/page.tsx
-│       │   │   ├── fabric-lots/[lotId]/page.tsx
-│       │   │   └── fabric-rolls/page.tsx
-│       │   ├── login/page.tsx
-│       │   ├── register/page.tsx
-│       │   ├── layout.tsx            # root layout with AuthProvider
-│       │   └── page.tsx              # redirects to /dashboard
-│       ├── components/ui/            # shadcn components
-│       ├── contexts/
-│       │   └── AuthContext.tsx       # user/tenant state, login/logout/register
-│       ├── lib/
-│       │   ├── api.ts                # axios instance + interceptors
-│       │   └── utils.ts              # cn, formatDate, formatMeters, statusColor
-│       ├── services/
-│       │   └── fabricService.ts      # typed wrappers for all fabric API endpoints
-│       ├── types/
-│       │   └── index.ts              # Tenant, User, Token, FabricLot, FabricRoll, FabricLotSummary
-│       └── middleware.ts             # protect /dashboard, /fabric-lots, /fabric-rolls
-├── docs/plans/
-├── docker-compose.yml
-├── .env.example
-└── CLAUDE.md
+backend/
+  app/core/          config, database (set_tenant_context / set_user_context), permissions, middleware/tenancy
+  app/models/        base (TenantBaseModel), tenant, subscription, fabric (all Module 1 models)
+  app/schemas/       auth, fabric
+  app/services/      tenant_service (auth, team, demo), fabric_service (suppliers, lots, rolls, issuance),
+                     production_service (yarn ledger, weaving, knitting), import_service (LC, landed cost),
+                     report_service (reports, Mill Pulse, trace, CSV), demo_seed
+  app/api/v1/endpoints/  auth, team, fabric/{suppliers,lots,rolls,yarn,production,imports,reports}
+  app/tests/         conftest, test_auth, test_fabric_lots, test_tenancy_isolation, test_fabric_module
+  alembic/versions/  001 tenancy, 002 lots/rolls, 003 Module 1 completion + RLS hardening
+  scripts/           create_app_role.sql, docker-init-app-role.sh
+frontend/src/
+  app/               / (landing), login, register, (dashboard)/{dashboard,fabric-lots,fabric-rolls,imports,
+                     yarn,weaving,knitting,suppliers,reports,team}
+  components/erp/    kit (tables, forms, dialogs, stat cards, insight cards), IssueRollDialog, AuthShell
+  lib/demo/          browser demo: engine (rules), reports, seed, adapter (axios)
+  services/erp.ts    typed client for every endpoint
+docs/                MODULE-1.md (API, invariants, spec deviations), DEPLOY.md
 ```
 
 ---
@@ -87,7 +40,9 @@ textile-erp-platform/
 | Backend dev server | `cd backend && uv run uvicorn app.main:app --reload` |
 | Frontend dev server | `cd frontend && npm run dev` |
 | Run migrations | `cd backend && uv run alembic upgrade head` |
-| Run tests | `cd backend && uv run pytest -x -v` |
+| Run tests | `cd backend && uv run pytest -v` (as a NON-superuser role — see RLS notes) |
+| Frontend typecheck | `cd frontend && npm run typecheck` |
+| Browser-demo build | `cd frontend && NEXT_PUBLIC_DEMO_MODE=browser npm run build` |
 | Docker (full stack) | `docker compose up --build` |
 | New migration | `cd backend && uv run alembic revision -m "description"` |
 
@@ -97,7 +52,11 @@ textile-erp-platform/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL asyncpg URL | required |
+| `DATABASE_URL` | asyncpg URL of the least-privilege app role | required |
+| `MIGRATIONS_DATABASE_URL` | Owner URL used only by Alembic | falls back to admin/DATABASE_URL |
+| `DATABASE_ADMIN_URL` | Optional separate URL for auth flows (BYPASSRLS not required) | DATABASE_URL |
+| `DEMO_ENABLED` / `DEMO_MAX_LIVE` | One-click demo workspaces | `true` / `200` |
+| `NEXT_PUBLIC_DEMO_MODE` | `browser` = serve the API from the browser (public demo) | unset |
 | `SECRET_KEY` | JWT signing key (min 32 chars) | required |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT TTL in minutes | `480` |
 | `POSTGRES_USER` | Postgres username (Docker) | `textile_user` |
@@ -113,16 +72,19 @@ Copy `.env.example` to `.env` and fill in secrets before running.
 
 ### Row Level Security (RLS)
 
-Every table (`tenants`, `tenant_users`, `fabric_lots`, `fabric_rolls`) has:
-```sql
-ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON <table>
-  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
-ALTER TABLE <table> FORCE ROW LEVEL SECURITY;
-```
+Every tenant table has `tenant_isolation` (FORCE) using
+`tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid` — the NULLIF makes a
+reset GUC on a pooled connection match zero rows instead of raising. `get_db` scopes each
+request with `set_tenant_context()` (bound `set_config(..., true)`, never string-built SQL).
 
-The `get_db` dependency in `backend/app/core/database.py` runs `SET LOCAL app.tenant_id = '<id>'` at the start of every request transaction, scoping all queries automatically.
+**Superusers and BYPASSRLS roles ignore RLS even with FORCE.** The official postgres image
+makes `POSTGRES_USER` a superuser, so the app must connect as the role created by
+`backend/scripts/create_app_role.sql`. Startup logs CRITICAL otherwise, `/health/ready`
+reports `rls_enforced`, and `test_app_connects_as_a_role_that_cannot_bypass_rls` fails.
+
+Auth without bypass: registration sets `app.tenant_id` before inserting the owner
+membership; login sets `app.user_id` only after the password check, unlocking the
+`self_membership` SELECT policy on `tenant_users` (own rows only).
 
 ### JWT Flow
 
@@ -156,36 +118,13 @@ shadcn v4.5 uses `@base-ui/react` instead of Radix UI. Key differences:
 
 ## Production Deployment
 
-| Service | URL |
-|---------|-----|
-| Frontend | https://frontend-three-kappa-64.vercel.app |
-| Backend | https://textile-erp-agenticengineer-94560b5e.koyeb.app |
-| Database | Neon.tech — `ep-cold-tree-aoi9e5rt.c-2.ap-southeast-1.aws.neon.tech` |
+| Service | State |
+|---|---|
+| Frontend (browser demo) | https://textile-erp-platform.vercel.app — Vercel project `textile-erp-platform`, deployed with `vercel deploy --prod` from `frontend/` |
+| Backend | **Not hosted** (no customer yet). Previous Koyeb service is gone; `frontend-three-kappa-64.vercel.app` now serves a different project (Bazaar). |
 
-### Koyeb (Backend)
-
-- **App / Service:** `textile-erp / backend` — org: `agenticengineer`
-- **Build:** GitHub source, Docker builder, workdir `backend/`, Dockerfile `Dockerfile`
-- **Region:** `was` (Washington DC) — free tier
-
-Useful commands:
-```bash
-koyeb service logs textile-erp/backend --tail
-koyeb service update textile-erp/backend --env "ALLOWED_ORIGINS=https://frontend-three-kappa-64.vercel.app"
-koyeb service redeploy textile-erp/backend
-```
-
-### Vercel (Frontend)
-
-- **Project:** `frontend` linked to `github.com/asadullah48/textile-erp-platform`
-- **`NEXT_PUBLIC_API_URL`** is set via `frontend/vercel.json` `build.env` (not via `vercel env add`, which had a gitBranch restriction bug)
-
-### Neon.tech (Database)
-
-- **Pooler endpoint** (app queries): `ep-cold-tree-aoi9e5rt-pooler.c-2.ap-southeast-1.aws.neon.tech`
-- **Direct endpoint** (migrations / BYPASSRLS): `ep-cold-tree-aoi9e5rt.c-2.ap-southeast-1.aws.neon.tech`
-- Set `DATABASE_URL` to pooler URL; set `DATABASE_ADMIN_URL` to direct URL.
-- asyncpg URL format: `postgresql+asyncpg://user:pass@host/dbname?ssl=require` (drop `channel_binding` param — not supported by asyncpg)
+Full procedure for both paths: `docs/DEPLOY.md`. Neon note: asyncpg URLs need `?ssl=require`
+and no `channel_binding`.
 
 ---
 
@@ -202,3 +141,4 @@ koyeb service redeploy textile-erp/backend
 | Task 13 | Dashboard layout + fabric lot/roll pages |
 | Task 14 | Docker Compose (postgres + backend + frontend) |
 | Task 15 | CLAUDE.md + README + Session 1 checkpoint |
+| Module 1 completion | RLS auth fixes, RBAC, migration 003, services, 42 tests, full UI, browser demo, least-privilege DB role, docs |

@@ -1,183 +1,143 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { fabricService } from "@/services/fabricService";
-import type { FabricRollCreate } from "@/services/fabricService";
-import type { FabricLot, FabricRoll, FabricLotSummary } from "@/types";
-import { statusColor } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { ChevronLeft, Layers, Plus, Printer, Route } from "lucide-react";
+import { IssueRollDialog } from "@/components/erp/IssueRollDialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-
-const ROLL_EMPTY: FabricRollCreate = {
-  roll_number: "",
-  length_meters: 0,
-  weight_kg: null,
-  status: "available",
-  location: null,
-};
+  DataTable, EmptyState, ErrorNote, FormDialog, PageHeader, SelectInput, Skeleton, StatCard, StatusBadge, TextInput,
+} from "@/components/erp/kit";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLoad } from "@/hooks/useLoad";
+import { formatDate, formatMeters, formatPKR, humanize, num } from "@/lib/utils";
+import { apiError, lotApi, productionApi } from "@/services/erp";
+import type { FabricRoll } from "@/types";
 
 export default function LotDetailPage() {
   const { lotId } = useParams<{ lotId: string }>();
-  const [lot, setLot] = useState<FabricLot | null>(null);
-  const [rolls, setRolls] = useState<FabricRoll[]>([]);
-  const [summary, setSummary] = useState<FabricLotSummary | null>(null);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<FabricRollCreate>(ROLL_EMPTY);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    const [l, r, s] = await Promise.all([
-      fabricService.getLot(lotId),
-      fabricService.getRolls(lotId),
-      fabricService.getLotSummary(lotId),
+  const router = useRouter();
+  const { can } = useAuth();
+  const { data, error, loading, reload } = useLoad(async () => {
+    const [lot, rolls, summary, weaving] = await Promise.all([
+      lotApi.get(lotId), lotApi.rolls(lotId), lotApi.summary(lotId), productionApi.weaving({ lot_id: lotId }),
     ]);
-    setLot(l);
-    setRolls(r);
-    setSummary(s);
-  };
-
-  useEffect(() => {
-    load();
+    return { lot, rolls, summary, weaving };
   }, [lotId]);
 
-  const set =
-    (k: keyof FabricRollCreate) => (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((f) => ({ ...f, [k]: e.target.value }));
+  if (error) return <ErrorNote message={error} onRetry={reload} />;
+  if (loading && !data) return <Skeleton rows={8} />;
+  if (!data) return null;
+  const { lot, rolls, summary, weaving } = data;
+  const nextNo = `${lot.lot_number.replace(/[^A-Za-z0-9]+/g, "").slice(-6)}-`;
 
-  const addRoll = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  const remove = async () => {
+    if (!confirm(`Delete lot ${lot.lot_number}? This cannot be undone from the app.`)) return;
     try {
-      await fabricService.createRoll(lotId, form);
-      setOpen(false);
-      setForm(ROLL_EMPTY);
-      load();
-    } catch (err: unknown) {
-      setError(
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Error adding roll"
-      );
+      await lotApi.remove(lot.id);
+      router.push("/fabric-lots");
+    } catch (e) {
+      alert(apiError(e));
     }
   };
 
-  if (!lot) {
-    return <p className="text-gray-500">Loading…</p>;
-  }
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{lot.lot_number}</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {lot.fabric_type} · {lot.color}{lot.gsm ? ` · ${lot.gsm} GSM` : ""}
-          {lot.supplier ? ` · ${lot.supplier}` : ""}
-        </p>
-        <Badge className="mt-2" variant={statusColor(lot.status)}>
-          {lot.status.replace(/_/g, " ")}
-        </Badge>
+    <>
+      <Link href="/fabric-lots" className="no-print inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <ChevronLeft className="size-3.5" /> All lots
+      </Link>
+      <PageHeader
+        eyebrow={`${humanize(lot.fabric_category)} lot`}
+        title={lot.lot_number}
+        subtitle={<>
+          {lot.fabric_type} · {lot.color}{lot.gsm ? ` · ${num(lot.gsm)} GSM` : ""}{lot.width_cm ? ` · ${num(lot.width_cm)} cm` : ""}
+          <br />
+          Received {formatDate(lot.received_date)}{lot.supplier ? ` from ${lot.supplier}` : ""}{lot.notes ? ` · ${lot.notes}` : ""}
+        </>}
+        actions={<>
+          <StatusBadge status={lot.status} />
+          {rolls.length > 0 && (
+            <Button variant="outline" size="sm" render={<Link href={`/fabric-lots/${lot.id}/labels`} />} nativeButton={false}>
+              <Printer /> Roll labels
+            </Button>
+          )}
+          {can("fabric_delete") && <Button variant="destructive" size="sm" onClick={remove}>Delete</Button>}
+        </>}
+      />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <StatCard label="Rolls" value={summary.roll_count} hint={`${formatMeters(summary.total_meters)} registered of ${formatMeters(lot.total_meters)}`}
+          tone={num(summary.total_meters) > 0 && num(summary.total_meters) !== num(lot.total_meters) ? "warn" : undefined} />
+        <StatCard label="Available" value={formatMeters(summary.meters_available)} />
+        <StatCard label="Reserved" value={formatMeters(summary.meters_reserved)} />
+        <StatCard label="Issued to floor" value={formatMeters(summary.meters_issued)} />
+        <StatCard label="On-hand value" value={summary.stock_value_pkr ? formatPKR(summary.stock_value_pkr, true) : "—"}
+          hint={lot.cost_per_meter ? `@ PKR ${num(lot.cost_per_meter).toLocaleString()}/m` : "No cost per meter set"}
+          tone={lot.cost_per_meter ? undefined : "warn"} />
       </div>
 
-      {summary && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {[
-            { label: "Total Rolls", value: summary.roll_count },
-            { label: "Total Meters", value: Number(summary.total_meters).toFixed(1) + " m" },
-            { label: "Available", value: Number(summary.meters_available).toFixed(1) + " m" },
-            { label: "Reserved", value: Number(summary.meters_reserved).toFixed(1) + " m" },
-          ].map(({ label, value }) => (
-            <Card key={label}>
-              <CardHeader className="pb-1">
-                <CardTitle className="text-xs text-gray-500 font-medium">{label}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{value}</p>
-              </CardContent>
-            </Card>
-          ))}
+      <section className="space-y-3" aria-labelledby="rolls-h">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="rolls-h" className="text-base font-semibold">Rolls</h2>
+          <div className="flex gap-2">
+            <FormDialog disabled={!can("fabric_write")} trigger={<Button size="sm" variant="outline"><Plus /> One roll</Button>}
+              title="Add a roll" submitLabel="Add roll" onSubmit={async (b) => { await lotApi.addRoll(lot.id, b); await reload(); }}>
+              <TextInput label="Roll number" name="roll_number" required placeholder={`${nextNo}025`} />
+              <TextInput label="Length (m)" name="length_meters" type="number" step="0.01" min="0.01" required />
+              <TextInput label="Weight (kg)" name="weight_kg" type="number" step="0.001" min="0" />
+              <SelectInput label="Grade" name="grade" defaultValue="" options={[{ value: "", label: "—" }, { value: "A", label: "A" }, { value: "B", label: "B" }, { value: "C", label: "C" }]} />
+              <TextInput label="Rack / location" name="location" placeholder="Rack A-3" />
+            </FormDialog>
+            <FormDialog disabled={!can("fabric_write")} trigger={<Button size="sm"><Layers /> Bulk register</Button>}
+              title="Register a delivery of rolls" description="How trucks actually arrive: 24 rolls of 100 m in one step."
+              submitLabel="Register rolls" wide onSubmit={async (b) => { await lotApi.addRollsBulk(lot.id, b); await reload(); }}>
+              <TextInput label="Roll number prefix" name="prefix" required defaultValue={nextNo} />
+              <TextInput label="Start at" name="start" type="number" min="0" defaultValue={String(rolls.length + 1)} />
+              <TextInput label="How many rolls" name="count" type="number" min="1" max="500" required defaultValue="10" />
+              <TextInput label="Length each (m)" name="length_meters" type="number" step="0.01" min="0.01" required defaultValue="100" />
+              <TextInput label="Weight each (kg)" name="weight_kg" type="number" step="0.001" min="0" />
+              <TextInput label="Rack / location" name="location" />
+            </FormDialog>
+          </div>
         </div>
+        <DataTable<FabricRoll>
+          rows={rolls}
+          empty={<EmptyState title="No rolls registered" hint="Bulk-register the delivery to start issuing fabric." />}
+          columns={[
+            { header: "Roll", cell: (r) => <span className="font-mono text-xs font-medium">{r.roll_number}</span> },
+            { header: "Length", align: "right", cell: (r) => formatMeters(r.length_meters, 1) },
+            { header: "Remaining", align: "right", cell: (r) => formatMeters(r.remaining_meters, 1) },
+            { header: "Grade", cell: (r) => r.grade ? <StatusBadge status={r.grade} label={r.grade} /> : "—" },
+            { header: "Location", cell: (r) => r.location ?? "—" },
+            { header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+            { header: "", cell: (r) => (
+              <div className="flex justify-end gap-1.5">
+                <Button size="xs" variant="ghost" render={<Link href={`/fabric-rolls/${r.id}`} />} nativeButton={false} title="Trace">
+                  <Route />
+                </Button>
+                <IssueRollDialog roll={r} onDone={reload} disabled={!can("fabric_write")} />
+              </div>
+            ) },
+          ]}
+        />
+      </section>
+
+      {weaving.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold">Woven into this lot</h2>
+          <DataTable
+            rows={weaving}
+            columns={[
+              { header: "Date", cell: (w) => formatDate(w.session_date) },
+              { header: "Loom", cell: (w) => <span className="font-mono text-xs">{w.loom_number}</span> },
+              { header: "Shift", cell: (w) => humanize(w.shift) },
+              { header: "Operator", cell: (w) => w.operator_name ?? "—" },
+              { header: "Output", align: "right", cell: (w) => formatMeters(w.produced_meters) },
+              { header: "Grade", cell: (w) => <StatusBadge status={w.quality_grade} label={w.quality_grade} /> },
+            ]}
+          />
+        </section>
       )}
-
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Rolls</h2>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button size="sm" />}>Add Roll</DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Roll to {lot.lot_number}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={addRoll} className="space-y-3">
-              {(
-                [
-                  { k: "roll_number", label: "Roll Number", type: "text", required: true },
-                  { k: "length_meters", label: "Length (m)", type: "number", required: true },
-                  { k: "weight_kg", label: "Weight (kg)", type: "number", required: false },
-                  { k: "location", label: "Location", type: "text", required: false },
-                ] as const
-              ).map(({ k, label, type, required }) => (
-                <div key={k}>
-                  <Label htmlFor={k}>{label}</Label>
-                  <Input
-                    id={k}
-                    type={type}
-                    value={String((form as Record<string, unknown>)[k] ?? "")}
-                    onChange={set(k)}
-                    required={required}
-                  />
-                </div>
-              ))}
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <Button type="submit" className="w-full">
-                Add Roll
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="rounded-md border bg-white overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              {["Roll #", "Length (m)", "Weight (kg)", "Status", "Location"].map((h) => (
-                <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rolls.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  No rolls yet.
-                </td>
-              </tr>
-            ) : (
-              rolls.map((r) => (
-                <tr key={r.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{r.roll_number}</td>
-                  <td className="px-4 py-3">{Number(r.length_meters).toFixed(2)}</td>
-                  <td className="px-4 py-3">{r.weight_kg ? Number(r.weight_kg).toFixed(3) : "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={statusColor(r.status)}>{r.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3">{r.location ?? "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    </>
   );
 }
