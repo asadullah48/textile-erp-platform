@@ -6,20 +6,24 @@ from the CMT proof-of-concept). If the two ever disagree, `SPEC-ERP.md` is autho
 
 ## Status today
 
-**Session 1 — Foundation: done.** Multi-tenant backend (FastAPI + async SQLAlchemy 2 +
-PostgreSQL RLS), JWT auth, role-based permissions, and the Fabric Mill module (lot/roll CRUD,
-summary). Next.js 15 frontend with auth pages and basic Fabric Mill list views.
+**Module 1 — Fabric Mill: complete.** Suppliers, lots and rolls (bulk registration,
+partial issuance), yarn stock ledger, weaving and knitting sessions, LC imports with
+landed cost, roll traceability with QR labels, Mill Pulse alerts, reports and CSV,
+team roles. 42 backend tests against real PostgreSQL; public demo at
+https://textile-erp-platform.vercel.app. See [docs/MODULE-1.md](./docs/MODULE-1.md).
 
-**Sessions 2–4: specced, not built.** Everything below is real design work already written
-down — not aspirational language invented for this document.
+**Production backend: not hosted** until there is a paying customer — the image,
+role script and deploy guide are ready ([docs/DEPLOY.md](./docs/DEPLOY.md)).
 
-## Stage 1 — Harden this repo (near-term)
+**Sessions 2–4: specced, not built.**
 
-- CI running the 5 existing tenancy-isolation tests plus new coverage for fabric-lot/roll CRUD
-  and auth endpoints (`backend/app/tests/test_fabric_lots.py`, `test_auth.py`)
-- `LICENSE` (MIT), `CONTRIBUTING.md` — both added alongside this roadmap
-- A typed frontend API client generated against the backend's Pydantic schemas, replacing
-  hand-written fetch calls
+## Stage 1 — Harden this repo: done
+
+- CI runs the full backend suite as a least-privilege role, checks migrations are
+  reversible, typechecks, and builds both frontend modes
+- `LICENSE` (MIT) and `CONTRIBUTING.md`
+- Typed frontend API client covering every endpoint (`frontend/src/services/erp.ts`).
+  Generating it from the OpenAPI schema remains a possible improvement.
 
 ## Stage 2 — CMT Integration (`SPEC-ERP.md` Session 2)
 
@@ -28,9 +32,8 @@ Transplant the CMT order lifecycle from the author's live proof-of-concept,
 
 - 21 CMT models moved to `models/cmt/`, each gaining a `tenant_id` FK and an RLS policy
 - 40+ CMT API endpoints migrated under `/api/v1/cmt/`
-- Weaving/knitting session tracking, imported-fabric (LC) tracking
-- `FabricIssuance` model + `POST /fabric/rolls/{id}/issue` — the join point between the Fabric
-  Mill module that exists today and the CMT module landing in this stage
+- Wire CMT orders to the existing `FabricIssuance` records (`POST /fabric-rolls/{id}/issue`
+  already carries `cmt_order_reference`) — the join point between the two modules
 
 The transformation pattern is already specified: PoC code filters in the service layer
 (`db.query(Order).filter(Order.is_deleted == False)`); the ERP pattern relies on RLS to scope
